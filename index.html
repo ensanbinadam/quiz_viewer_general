@@ -5,7 +5,7 @@
     <title>عارض الاسئلة التفاعلية العام  ـ </title>
 
       <link rel="icon" href="https://ensanbinadam.github.io/quiz_viewer_general_ar/favicon.ico" /> 
-    <!-- خط -->
+   
     
     <style data-inline-lib="1" data-keep="lib" data-injected="1" data-origin="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;500;700&amp;display=swap">/* arabic */
 @font-face {
@@ -111,6 +111,14 @@
         grid-template-columns: repeat(2, 1fr);
         gap: 10px;
       }
+
+      /* 4×1 للحاسب فقط. على الجوال تبقى عمود واحد حسب CSSك الحالي */
+      @media (min-width: 769px) {
+        .options[data-layout="4x1"] {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
       .options-row {
         display: grid;
         gap: 10px;
@@ -646,6 +654,15 @@
           <label for="questionTime">وقت السؤال (بالثواني):</label>
           <input id="questionTime" type="number" min="5" max="180" value="30" onchange="changeQuestionTime()">
         </div>
+
+        <div class="settings-option">
+          <label for="optionsLayout">تخطيط الخيارات:</label>
+          <select id="optionsLayout" onchange="changeOptionsLayout()">
+            <option value="2x2" selected="">شبكة 2×2 (افتراضي)</option>
+            <option value="4x1">سطر واحد 4×1</option>
+          </select>
+        </div>
+
         <div class="settings-footer">
           <button class="nav-btn" onclick="toggleSettingsPanel()">
             حفظ وإغلاق
@@ -706,15 +723,10 @@
       </div>
     </div>
 
-   <footer dir="rtl" style="text-align:center; font-family: inherit;">
-      <p>
-          برمجة :
-          <a href="https://t.me/ITG_KSA" target="_blank" rel="noopener">
-            ملتقى التعليم التفاعلي (ITG) | بالتعاون مع chatgpt.com 
-          </a>
-        </p>
-        <p>عارض الأسئلة التفاعلية العام| 1447هـ/2025م</p>
-      </footer>
+    <footer id="quizFooter">
+      إعداد وتصميم / ملتقى معلمي ومعلمات المواد الأخرى ـ المملكة العربية
+      السعودية
+    </footer>
 
     <script>
       // ======== الحالة العامة ========
@@ -730,6 +742,7 @@
         lastWrong: [],
         numeralType: "eastern",
         shuffledMaps: [],
+        optionsLayout: "2x2",
       };
 
       const quizConfig = {
@@ -988,6 +1001,7 @@
             numeralType: state.numeralType,
             shuffledMaps: state.shuffledMaps,
             questions: state.questions,
+            optionsLayout: state.optionsLayout,
           };
           localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
         } catch {}
@@ -1004,6 +1018,14 @@
             "timeLeft",
             "questionTime",
             "numeralType",
+            [
+              "currentQuestion",
+              "score",
+              "timeLeft",
+              "questionTime",
+              "numeralType",
+              "optionsLayout",
+            ],
           ].forEach((k) => {
             if (p[k] !== undefined) state[k] = p[k];
           });
@@ -1101,6 +1123,24 @@
           state.lastWrong = new Array(state.questions.length).fill(null);
         }
         showQuestion();
+      }
+
+      function canApplyChosenLayout(layout, optionCount) {
+        if (layout === "4x1") {
+          return (
+            optionCount === 4 && window.matchMedia("(min-width: 769px)").matches
+          );
+        }
+        return false;
+      }
+      function applyLayoutSafely(optionCount) {
+        const el = document.getElementById("options");
+        if (!el) return;
+        if (canApplyChosenLayout(state.optionsLayout, optionCount)) {
+          el.dataset.layout = "4x1";
+        } else {
+          delete el.dataset.layout; // رجوع فوري للافتراضي
+        }
       }
 
       function showQuestion() {
@@ -1264,6 +1304,7 @@
             }
           };
           valid.push(wrap);
+          applyLayoutSafely(valid.length);
         });
 
         optionsElement.classList.remove(
@@ -1464,6 +1505,14 @@
         }
       }
 
+      function changeOptionsLayout() {
+        const sel = document.getElementById("optionsLayout");
+        const val = (sel && sel.value) || "2x2";
+        state.optionsLayout = val === "4x1" ? "4x1" : "2x2";
+        persist();
+        showQuestion();
+      }
+
       function cleanEasternNumerals() {
         if (!Array.isArray(state.questions)) return;
         function eastToLatin(t) {
@@ -1538,10 +1587,9 @@
         };
         input.click();
       }
-
       function saveQuestionsToFile() {
         if (!Array.isArray(state.questions) || state.questions.length === 0) {
-          alert("لا توجد أسئلة لحفظها!");
+          alert("No questions to save!");
           return;
         }
         const dataStr = JSON.stringify(state.questions, null, 2);
@@ -1554,7 +1602,7 @@
         setTimeout(() => URL.revokeObjectURL(url), 100);
       }
 
-      // ======== وضع التحرير (تحرير السؤال) ========
+      // ======== Edit Mode ========
       function toggleEditMode() {
         const editPanel = document.getElementById("editPanel");
         const quizBox = document.querySelector(".quiz-box");
@@ -1562,7 +1610,7 @@
         const readingText = document.getElementById("readingText");
 
         if (!Array.isArray(state.questions) || state.questions.length === 0) {
-          alert("يرجى تحميل الأسئلة أولاً!");
+          alert("Please load questions first!");
           return;
         }
 
@@ -1570,17 +1618,14 @@
           editPanel.style.display = "none";
           quizBox.style.display = "block";
           countersBox.style.display = "flex";
-
           const q = state.questions[state.currentQuestion];
           const hasReading = q && (q.reading || q.readingText || q.paragraph);
           readingText.style.display = hasReading ? "block" : "none";
-
           startTimer();
           return;
         }
 
         clearInterval(state.timerId);
-
         editPanel.style.display = "block";
         quizBox.style.display = "none";
         countersBox.style.display = "none";
@@ -1741,11 +1786,11 @@
           .find((x) => x !== -1);
 
         if (!questionText) {
-          alert("يرجى إدخال نص السؤال!");
+          alert("Please enter the question text!");
           return;
         }
         if (nonEmpty < 2) {
-          alert("يرجى إدخال على الأقل خيارين غير فارغين!");
+          alert("Please enter at least two non-empty options!");
           return;
         }
         if (
@@ -1754,7 +1799,7 @@
           !options[correctIndex]
         ) {
           alert(
-            "يرجى تحديد إجابة صحيحة واحدة، وتأكد أن الخيار المحدد غير فارغ!"
+            "Please select one correct answer, and make sure it is not empty!"
           );
           return;
         }
@@ -1840,10 +1885,10 @@
 
       function deleteCurrentQuestion() {
         if (!Array.isArray(state.questions) || state.questions.length <= 1) {
-          alert("لا يمكن حذف السؤال الوحيد!");
+          alert("Cannot delete the only question!");
           return;
         }
-        if (!confirm("هل أنت متأكد من حذف السؤال الحالي؟")) return;
+        if (!confirm("Are you sure you want to delete this question?")) return;
 
         state.questions.splice(state.currentQuestion, 1);
         if (Array.isArray(state.answeredQuestions))
@@ -1868,14 +1913,15 @@
         persist();
       }
 
-      // اربط الأحداث بعد التحميل
       window.addEventListener("load", attachEditPanelEvents);
 
+      // ======== حفظ نسخة الطالب (بدون MathJax) – عربي/إنجليزي ========
       function saveAppForOfflineUse() {
         try {
           const teacherHTML = document.documentElement.cloneNode(true);
           const doc = teacherHTML.ownerDocument;
 
+          // أخفِ عناصر المعلم من نسخة الطالب
           const removeSelectors = [
             ".config-btn",
             ".buttons-container",
@@ -1893,6 +1939,7 @@
             teacherHTML.querySelectorAll(sel).forEach((el) => el.remove())
           );
 
+          // حالة عرض الواجهات في الطالب
           const scoreBoard = teacherHTML.querySelector("#scoreBoard");
           if (scoreBoard) scoreBoard.style.display = "none";
           const quizBox = teacherHTML.querySelector(".quiz-box");
@@ -1902,12 +1949,14 @@
           const readingTextBox = teacherHTML.querySelector("#readingText");
           if (readingTextBox) readingTextBox.style.display = "none";
 
+          // تجهيز البيانات + الترقيم
           const cleanQuestions = JSON.parse(
             JSON.stringify(state.questions ?? [])
           );
           const numeral =
             state.numeralType === "eastern" ? "eastern" : "arabic";
           const qTime = Number(state.questionTime) || 30;
+          const layoutChoice = state.optionsLayout === "4x1" ? "4x1" : "2x2"; // تأمين قيمة التخطيط
 
           const EAST = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"];
           const toEastern = (s) =>
@@ -1936,11 +1985,13 @@
           }
           normalizeData(cleanQuestions, numeral);
 
+          // DOMPurify إن لم تكن موجودة
           const head = teacherHTML.querySelector("head");
           const needScript = (needle) =>
             ![...teacherHTML.querySelectorAll("script[src]")].some((s) =>
               s.src.includes(needle)
             );
+
           if (needScript("purify")) {
             const dp = doc.createElement("script");
             dp.src =
@@ -1949,355 +2000,288 @@
             head.appendChild(dp);
           }
 
+          // تأكد من وجود قاعدة CSS لتخطيط 4×1 (لن تكرّر نفسها بفضل السمة)
+          if (!teacherHTML.querySelector("style[data-student-4x1]")) {
+            const styleTag = doc.createElement("style");
+            styleTag.setAttribute("data-student-4x1", "");
+            styleTag.textContent =
+              '@media (min-width: 769px){ .options[data-layout="4x1"]{ grid-template-columns: repeat(4, minmax(0,1fr)); } }';
+            head.appendChild(styleTag);
+          }
+
+          // سكربت الطالب (بدون MathJax)
           const studentScript = doc.createElement("script");
           studentScript.defer = true;
           studentScript.textContent = `
-      (function(){
-        const studentState = {
-          questions: ${JSON.stringify(cleanQuestions)},
-          currentQuestion: 0,
-          score: 0,
-          timeLeft: ${qTime},
-          questionTime: ${qTime},
-          timerId: null,
-          isPaused: false,
-          answeredQuestions: [],
-          lastWrong: [],
-          numeralType: ${JSON.stringify(numeral)},
-          shuffledMaps: []
-        };
+        (function(){
+          var studentState = {
+            questions: ${JSON.stringify(cleanQuestions)},
+            currentQuestion: 0,
+            score: 0,
+            timeLeft: ${qTime},
+            questionTime: ${qTime},
+            timerId: null,
+            isPaused: false,
+            answeredQuestions: [],
+            lastWrong: [],
+            numeralType: ${JSON.stringify(numeral)},
+            shuffledMaps: [],
+            optionsLayout: ${JSON.stringify(layoutChoice)} // "2x2" أو "4x1"
+          };
 
-        const EASTERN = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
-        const fmtAr = new Intl.NumberFormat('ar-EG');
-        const fmtLa = new Intl.NumberFormat('en-US');
-        function formatNumber(n){ return studentState.numeralType==='eastern' ? fmtAr.format(n) : fmtLa.format(n); }
+          var EASTERN = ['٠','١','٢','٣','٤','٥','٦','٧','٨','٩'];
+          var fmtAr = new Intl.NumberFormat('ar-EG');
+          var fmtLa = new Intl.NumberFormat('en-US');
+          function formatNumber(n){ return studentState.numeralType==='eastern' ? fmtAr.format(n) : fmtLa.format(n); }
+          function convertNumeralsInText(text){
+            if(!text || typeof text!=='string') return text;
+            return studentState.numeralType==='eastern' ? text.replace(/\\d/g, function(d){return EASTERN[d];}) : text.replace(/[٠-٩]/g, function(d){return EASTERN.indexOf(d);});
+          }
+          function sanitizeHTML(html){
+            if (!window.DOMPurify) return html || '';
+            return DOMPurify.sanitize(html || '', {
+              ADD_TAGS: ['a','u','mark','blockquote','hr','pre','code','h1','h2','h3','h4','h5','h6','ul','ol','li','img','table','thead','tbody','tr','td','th','p','span','div','br','sub','sup','strong','em'],
+              ALLOWED_ATTR: ['src','alt','style','class','rowspan','colspan','href','target','rel','dir','width','height'],
+              ALLOW_DATA_ATTR: false,
+              FORBID_ATTR: ['onerror','onclick']
+            });
+          }
+          function plainToHTMLStrict(src){
+            if (!src || typeof src!=='string') return '';
+            var ESC = function(s){ return s.replace(/[&<>]/g, function(m){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]);}); };
+            var lines = src.split(/\\r?\\n/), out = [];
+            for (var k=0;k<lines.length;k++){
+              var raw = lines[k], s = raw.trim();
+              if (!s){ out.push('<p>&nbsp;</p>'); continue; }
+              if (/^\\/\\/\\/+$/ .test(s)) { out.push('<hr>'); continue; }
+              s = ESC(s).replace(/(?:\\s*\\/\\/\\s*)+/g, '<br>');
+              var m2 = s.match(/^(\\*+|[\\-\\u2212\\u2013\\u2014]|[\\(\\[]?[0-9٠-٩]+[\\)\\.\\-:]|[IVXLC]+[\\)\\.\\:])\\s+(.*)$/i);
+              if (m2){ s = '<span class="lead-in">'+m2[1]+'</span> '+m2[2]; }
+              out.push('<p>'+s+'</p>');
+            }
+            if (!out.length) out.push('<p>&nbsp;</p>');
+            return out.join('');
+          }
+          function formatQuizContent(html){
+            if (!html || typeof html!=='string') return '';
+            var looksHTML = /<\\/?[a-z][\\s\\S]*>/i.test(html);
+            var rendered = looksHTML ? html : plainToHTMLStrict(html);
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = rendered;
+            (function walk(node){
+              if (node.nodeType === Node.TEXT_NODE){
+                node.nodeValue = convertNumeralsInText(node.nodeValue);
+              } else if (node.nodeType === Node.ELEMENT_NODE){
+                for (var i=0;i<node.childNodes.length;i++) walk(node.childNodes[i]);
+              }
+            })(tempDiv);
+            return sanitizeHTML(tempDiv.innerHTML);
+          }
+          function shuffleOptionsOnce(qIndex){
+            if(studentState.shuffledMaps[qIndex]) return studentState.shuffledMaps[qIndex];
+            var q=studentState.questions[qIndex]; var map=(q.options||[]).map(function(_,i){return i;});
+            for(var i=map.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=map[i]; map[i]=map[j]; map[j]=t; }
+            studentState.shuffledMaps[qIndex]=map; return map;
+          }
+          function startTimer(){
+            clearInterval(studentState.timerId);
+            var endAt=Date.now()+studentState.questionTime*1000;
+            studentState.timerId=setInterval(function(){
+              if(studentState.isPaused) return;
+              var remain=Math.max(0, Math.ceil((endAt-Date.now())/1000));
+              studentState.timeLeft=remain; updateTimerDisplay();
+              if(remain<=0){ clearInterval(studentState.timerId); nextQuestion(); }
+            },200);
+          }
+          function updateTimerDisplay(){ var el=document.getElementById('timer'); if(el) el.textContent = 'الوقت المتبقي: '+formatNumber(studentState.timeLeft)+' ثانية'; }
+          function updateQuestionCounter(){ var el=document.getElementById('questionCounter'); if(el) el.textContent = 'السؤال '+formatNumber(studentState.currentQuestion+1)+' من '+formatNumber(studentState.questions.length); }
+          function updateScoreCounter(){
+            var el = document.getElementById('scoreCounter');
+            if (el) el.textContent = 'الدرجات: ' + formatNumber(studentState.score) + ' من ' + formatNumber(studentState.questions.length);
+          }
 
-        function convertNumeralsInText(text){
-          if(!text || typeof text!=='string') return text;
-          return studentState.numeralType==='eastern'
-            ? text.replace(/\\d/g, d => EASTERN[d])
-            : text.replace(/[٠-٩]/g, d => EASTERN.indexOf(d));
-        }
-
-        function applyNumeralTypeToPage(){
-          const SKIP = new Set(['SCRIPT','STYLE','TEXTAREA','INPUT']);
-          function walk(node){
-            if (node.nodeType === Node.TEXT_NODE){
-              node.nodeValue = convertNumeralsInText(node.nodeValue);
-            } else if (node.nodeType === Node.ELEMENT_NODE && !SKIP.has(node.tagName)){
-              for (let i=0;i<node.childNodes.length;i++) walk(node.childNodes[i]);
+          // تخطيط 4×1 الآمن
+          function canApplyChosenLayout(layout, optionCount){
+            if (layout === '4x1') {
+              return optionCount === 4 && window.matchMedia('(min-width: 769px)').matches;
+            }
+            return false; // الافتراضي 2×2
+          }
+          function applyLayoutSafely(optionCount){
+            var el = document.getElementById('options');
+            if (!el) return;
+            if (canApplyChosenLayout(studentState.optionsLayout, optionCount)){
+              el.dataset.layout = '4x1';
+            } else {
+              delete el.dataset.layout; // رجوع فوري للأصل
             }
           }
-          const targets = [document.body, document.getElementById('quizTitle'), document.getElementById('instructions'), document.getElementById('quizFooter'), document.getElementById('scoreBoard')];
-          targets.forEach(el => { if (el) walk(el); });
+
+          function showQuestion(){
+            clearInterval(studentState.timerId); studentState.timeLeft=studentState.questionTime;
+            var readingText=document.getElementById('readingText'); var questionEl=document.getElementById('question'); var optionsEl=document.getElementById('options');
+            if(studentState.currentQuestion>=studentState.questions.length){ showResult(); return; }
+            var q=studentState.questions[studentState.currentQuestion];
+
+            if (readingText){ readingText.innerHTML=''; }
+            var readingTextContent='', readingImageSrc=null;
+            if (q.reading){ readingTextContent = q.reading.text || ''; readingImageSrc = q.reading.image || null; }
+            else if (q.readingText){ readingTextContent = typeof q.readingText==='string' ? q.readingText : (q.readingText.text||''); readingImageSrc = typeof q.readingText==='object' ? (q.readingText.image||null) : null; }
+            else if (q.paragraph){ readingTextContent = q.paragraph; readingImageSrc = q.paragraphImage || null; }
+            if (readingText){
+              if(readingTextContent || readingImageSrc){
+                readingText.style.display='block';
+                if(readingTextContent){ var d=document.createElement('div'); d.className='reading-text-content'; d.innerHTML=formatQuizContent(readingTextContent); readingText.appendChild(d); }
+                if(readingImageSrc){ var im=document.createElement('img'); im.src=readingImageSrc; im.className='reading-text-image'; im.alt='صورة النص القرائي'; im.loading='lazy'; im.decoding='async'; readingText.appendChild(im); }
+              } else readingText.style.display='none';
+            }
+
+            if (questionEl){
+              questionEl.innerHTML='';
+              var qc=document.createElement('div'); qc.className='question-content';
+              if(q.question && q.question.text){ var d2=document.createElement('div'); d2.className='question-text'; d2.innerHTML = formatQuizContent(q.question.text); qc.appendChild(d2); }
+              if(q.question && q.question.image){ var i2=document.createElement('img'); i2.src=q.question.image; i2.className='question-image'; i2.alt='صورة السؤال'; i2.loading='lazy'; i2.decoding='async'; qc.appendChild(i2); }
+              questionEl.appendChild(qc);
+            }
+
+            if (!optionsEl) return;
+            optionsEl.innerHTML=''; if(!q.options || q.options.length===0) return;
+            optionsEl.setAttribute('role','radiogroup');
+
+            var map=shuffleOptionsOnce(studentState.currentQuestion); var list=[];
+            map.forEach(function(origIdx){
+              var opt=q.options[origIdx]; if(!opt||(!opt.text&&!opt.image)) return;
+              var wrap=document.createElement('div'); wrap.className='option'; wrap.setAttribute('role','radio'); wrap.setAttribute('tabindex','0'); wrap.setAttribute('aria-checked','false');
+              var c=document.createElement('div'); c.className='option-content';
+              if(opt.image){ var im2=document.createElement('img'); im2.src=opt.image; im2.className='option-image'; im2.alt='صورة الخيار'; im2.loading='lazy'; im2.decoding='async'; c.appendChild(im2); }
+              if(opt.text){ var s=document.createElement('span'); s.className='option-text'; s.innerHTML=formatQuizContent(opt.text); c.appendChild(s); }
+              wrap.appendChild(c);
+              if(studentState.answeredQuestions[studentState.currentQuestion]!==null){
+                wrap.setAttribute('aria-disabled','true');
+                if(origIdx===q.correct) wrap.classList.add('correct');
+                if(studentState.answeredQuestions[studentState.currentQuestion]===false && studentState.lastWrong[studentState.currentQuestion]===origIdx) wrap.classList.add('wrong');
+                var selectedIdx = studentState.answeredQuestions[studentState.currentQuestion] === true ? q.correct : studentState.lastWrong[studentState.currentQuestion];
+                wrap.setAttribute('aria-checked', String(origIdx === selectedIdx));
+              }
+              wrap.onclick=function(){ checkAnswer(origIdx); };
+              wrap.onkeydown=function(e){
+                if(e.key==='Enter'||e.key===' '){ e.preventDefault(); checkAnswer(origIdx); return; }
+                if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key==='ArrowLeft'||e.key==='ArrowUp'){
+                  var items = Array.from(document.querySelectorAll('#options .option'));
+                  var idx = items.indexOf(wrap); var next = idx;
+                  if (e.key==='ArrowRight'||e.key==='ArrowDown') next++; else next--;
+                  if (next<0) next = items.length-1; if (next>=items.length) next=0;
+                  var el2 = items[next]; if(el2) el2.focus();
+                }
+              };
+              list.push(wrap);
+            });
+
+            // ✅ طبّق التخطيط بعد اكتمال القائمة
+            applyLayoutSafely(list.length);
+
+            optionsEl.classList.remove('options-row','options-two','options-three');
+            if(list.length<=3){
+              optionsEl.classList.add('options-row');
+              if(list.length===2) optionsEl.classList.add('options-two');
+              else if(list.length===3) optionsEl.classList.add('options-three');
+            }
+            list.forEach(function(v){ optionsEl.appendChild(v); });
+
+            var prevBtn=document.getElementById('prevBtn'); var nextBtn=document.getElementById('nextBtn');
+            if (prevBtn) prevBtn.disabled = studentState.currentQuestion===0;
+            if (nextBtn) nextBtn.disabled = false;
+
+            var prog=document.getElementById('progress');
+            if (prog) {
+              var total = Array.isArray(studentState.questions) ? studentState.questions.length : 0;
+              var pct   = total>0 ? (studentState.currentQuestion/total)*100 : 0;
+              prog.style.width = pct + '%';
+            }
+
+            updateQuestionCounter(); updateScoreCounter(); updateTimerDisplay(); startTimer();
+          }
+
+          function checkAnswer(selectedIndex){
+            if(studentState.answeredQuestions[studentState.currentQuestion]!==null) return;
+            var q=studentState.questions[studentState.currentQuestion];
+            document.querySelectorAll('.option').forEach(function(o){o.setAttribute('aria-disabled','true');});
+            var correct=q.correct;
+            if(selectedIndex===correct){ studentState.score++; studentState.answeredQuestions[studentState.currentQuestion]=true; }
+            else { studentState.answeredQuestions[studentState.currentQuestion]=false; studentState.lastWrong[studentState.currentQuestion]=selectedIndex; }
+            var map=studentState.shuffledMaps[studentState.currentQuestion]||[];
+            document.querySelectorAll('.option').forEach(function(el,i){
+              var orig=map[i];
+              if(orig===correct) el.classList.add('correct');
+              if(studentState.answeredQuestions[studentState.currentQuestion]===false && orig===studentState.lastWrong[studentState.currentQuestion]) el.classList.add('wrong');
+              el.setAttribute('aria-checked', String(orig===selectedIndex));
+            });
+            updateScoreCounter();
+            if(studentState.currentQuestion < studentState.questions.length-1) setTimeout(nextQuestion, 1000); else setTimeout(showResult, 1000);
+          }
+
+          function nextQuestion(){ if(studentState.currentQuestion>=studentState.questions.length-1){ showResult(); return; } studentState.currentQuestion++; showQuestion(); }
+          function previousQuestion(){
+         if (studentState.currentQuestion > 0){
+         studentState.currentQuestion--;
+         showQuestion();
+         }
         }
 
-        function sanitizeHTML(html){
-          if (!window.DOMPurify) return html || '';
-          return DOMPurify.sanitize(html || '', {
-            ADD_TAGS: ['a','u','mark','blockquote','hr','pre','code','h1','h2','h3','h4','h5','h6','ul','ol','li','img','table','thead','tbody','tr','td','th','p','span','div','br','sub','sup','strong','em'],
-            ALLOWED_ATTR: ['src','alt','style','class','rowspan','colspan','href','target','rel','dir','width','height'],
-            ALLOW_DATA_ATTR: false,
-            FORBID_ATTR: ['onerror','onclick']
+          function showResult(){
+            clearInterval(studentState.timerId);
+            var qb=document.querySelector('.quiz-box'); if (qb) qb.style.display='none';
+            var sb=document.getElementById('scoreBoard'); if (sb) sb.style.display='block';
+            var rt=document.getElementById('readingText'); if (rt) rt.style.display='none';
+            var ct=document.getElementById('countersBox'); if (ct) ct.style.display='none';
+            var fs=document.getElementById('finalScore'); if (fs) fs.textContent = formatNumber(studentState.score);
+            var tq=document.getElementById('totalQuestions'); if (tq) tq.textContent = formatNumber(studentState.questions.length);
+          }
+
+          function restartQuiz(){
+            studentState.currentQuestion=0; studentState.score=0; studentState.timeLeft=studentState.questionTime;
+            studentState.answeredQuestions=new Array(studentState.questions.length).fill(null);
+            studentState.lastWrong=new Array(studentState.questions.length).fill(null);
+            var qb=document.querySelector('.quiz-box'); if (qb) qb.style.display='block';
+            var sb=document.getElementById('scoreBoard'); if (sb) sb.style.display='none';
+            var ct=document.getElementById('countersBox'); if (ct) ct.style.display='flex';
+            var p=document.getElementById('progress'); if(p) p.style.width='0%';
+            document.querySelectorAll('.option').forEach(function(o){ o.classList.remove('correct','wrong'); o.removeAttribute('aria-disabled'); });
+            showQuestion();
+          }
+
+          function togglePause(){ studentState.isPaused=!studentState.isPaused; var b=document.getElementById('pauseBtn'); if (b){ b.textContent = studentState.isPaused ? 'استئناف' : 'إيقاف مؤقت'; b.style.background = studentState.isPaused ? '#28a745' : '#ffc107'; } }
+
+          // شبكة أمان
+          window.nextQuestion     = nextQuestion;
+          window.previousQuestion = previousQuestion;
+          window.togglePause      = togglePause;
+          window.restartQuiz      = restartQuiz;
+
+          // إعادة تطبيق التخطيط عند تغيير حجم الشاشة
+          window.addEventListener('resize', function(){
+            var count = document.querySelectorAll('#options .option').length;
+            applyLayoutSafely(count);
           });
-        }
 
-        function plainToHTMLStrict(src){
-          if (!src || typeof src !== 'string') return '';
-          const ESC = s => s.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
-          const lines = src.split(/\\r?\\n/);
-          const out = [];
-          for (let raw of lines){
-            let s = raw.trim();
-            if (!s) { out.push('<p>&nbsp;</p>'); continue; }
-            if (/^\\/\\/\\/+$/ .test(s)) { out.push('<hr>'); continue; }
-            s = ESC(s).replace(/(?:\\s*\\/\\/\\s*)+/g, '<br>');
-            const m = s.match(/^(\\*+|[\\-\\u2212\\u2013\\u2014]|[\\(\\[]?[0-9٠-٩]+[\\)\\.\\-:]|[IVXLC]+[\\)\\.\\:])\\s+(.*)$/i);
-            if (m){
-              const head = m[1], rest = m[2];
-              s = '<span class="lead-in">'+head+'</span> '+rest;
-            }
-            out.push('<p>'+s+'</p>');
-          }
-          if (!out.length) out.push('<p>&nbsp;</p>');
-          return out.join('');
-        }
+          window.addEventListener('load', function(){
+            var prevBtn=document.getElementById('prevBtn'); if(prevBtn) prevBtn.onclick = previousQuestion;
+            var nextBtn=document.getElementById('nextBtn'); if(nextBtn) nextBtn.onclick = nextQuestion;
+            var pauseBtn=document.getElementById('pauseBtn'); if(pauseBtn) pauseBtn.onclick = togglePause;
+            var restart=document.querySelector('.restart-btn'); if(restart) restart.onclick = restartQuiz;
 
-        function formatQuizContent(html){
-  if (!html || typeof html !== 'string') return '';
-  const looksHTML = /<\\/?[a-z][\\s\\S]*>/i.test(html);
-  const rendered = looksHTML ? html : plainToHTMLStrict(html);
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = rendered;
-  (function walk(node){
-    if (node.nodeType === Node.TEXT_NODE){
-      node.nodeValue = convertNumeralsInText(node.nodeValue);
-    } else if (node.nodeType === Node.ELEMENT_NODE){
-      for (let i=0;i<node.childNodes.length;i++) walk(node.childNodes[i]);
-    }
-  })(tempDiv);
-  return sanitizeHTML(tempDiv.innerHTML);
-}
-
-
-        function shuffleOptionsOnce(qIndex){
-          if(studentState.shuffledMaps[qIndex]) return studentState.shuffledMaps[qIndex];
-          const q=studentState.questions[qIndex];
-          const map=(q.options||[]).map((_,i)=>i);
-          for(let i=map.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [map[i],map[j]]=[map[j],map[i]]; }
-          studentState.shuffledMaps[qIndex]=map; return map;
-        }
-
-        function startTimer(){
-          clearInterval(studentState.timerId);
-          const endAt=Date.now()+studentState.questionTime*1000;
-          studentState.timerId=setInterval(()=>{
-            if(studentState.isPaused) return;
-            const remain=Math.max(0, Math.ceil((endAt-Date.now())/1000));
-            studentState.timeLeft=remain; updateTimerDisplay();
-            if(remain<=0){ clearInterval(studentState.timerId); nextQuestion(); }
-          },200);
-        }
-        function updateTimerDisplay(){ const el=document.getElementById('timer'); if(el) el.textContent = 'الوقت المتبقي: '+formatNumber(studentState.timeLeft)+' ثانية'; }
-        function updateQuestionCounter(){ const el=document.getElementById('questionCounter'); if(el) el.textContent = 'السؤال '+formatNumber(studentState.currentQuestion+1)+' من '+formatNumber(studentState.questions.length); }
-        function updateScoreCounter(){ const el=document.getElementById('scoreCounter'); if(el) el.textContent = 'الدرجات: '+formatNumber(studentState.score)+' من '+formatNumber(studentState.questions.length); }
-
-        function showQuestion(){
-  clearInterval(studentState.timerId);
-  studentState.timeLeft = studentState.questionTime;
-
-  const readingTextElement = document.getElementById('readingText');
-  const questionElement    = document.getElementById('question');
-  const optionsElement     = document.getElementById('options');
-
-  if (studentState.currentQuestion >= studentState.questions.length){
-    showResult();
-    return;
-  }
-
-  const q = studentState.questions[studentState.currentQuestion];
-
-  // ----- القراءة -----
-  if (readingTextElement){
-    readingTextElement.innerHTML = '';
-    let readingTextContent = '', readingImageSrc = null;
-    if (q.reading){ readingTextContent = q.reading.text || ''; readingImageSrc = q.reading.image || null; }
-    else if (q.readingText){
-      readingTextContent = typeof q.readingText === 'string' ? q.readingText : (q.readingText.text || '');
-      readingImageSrc    = typeof q.readingText === 'object'  ? (q.readingText.image || null) : null;
-    } else if (q.paragraph){
-      readingTextContent = q.paragraph; readingImageSrc = q.paragraphImage || null;
-    }
-
-    if (readingTextContent || readingImageSrc){
-      readingTextElement.style.display = 'block';
-      if (readingTextContent){
-        const d = document.createElement('div');
-        d.className = 'reading-text-content';
-        d.innerHTML = formatQuizContent(readingTextContent);
-        readingTextElement.appendChild(d);
-      }
-      if (readingImageSrc){
-        const img = document.createElement('img');
-        img.src = readingImageSrc;
-        img.className = 'reading-text-image';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.alt = 'صورة النص القرائي';
-        readingTextElement.appendChild(img);
-      }
-    } else {
-      readingTextElement.style.display = 'none';
-    }
-  }
-
-  // ----- السؤال -----
-  if (questionElement){
-    questionElement.innerHTML = '';
-    const qc = document.createElement('div');
-    qc.className = 'question-content';
-    if (q.question?.text){
-      const d = document.createElement('div');
-      d.className = 'question-text';
-      d.innerHTML = formatQuizContent(q.question.text);
-      qc.appendChild(d);
-    }
-    if (q.question?.image){
-      const i = document.createElement('img');
-      i.src = q.question.image;
-      i.className = 'question-image';
-      i.loading = 'lazy';
-      i.decoding = 'async';
-      i.alt = 'صورة السؤال';
-      qc.appendChild(i);
-    }
-    questionElement.appendChild(qc);
-  }
-
-  // ----- الخيارات -----
-  if (!optionsElement) return;
-  optionsElement.innerHTML = '';
-  optionsElement.setAttribute('role','radiogroup');
-  if (!q.options || q.options.length === 0){ console.warn('لا توجد خيارات لهذا السؤال'); return; }
-
-  const map = shuffleOptionsOnce(studentState.currentQuestion);
-  const valid = [];
-  map.forEach((origIdx)=>{
-    const opt = q.options[origIdx];
-    if (!opt || (!opt.text && !opt.image)) return;
-
-    const wrap = document.createElement('div');
-    wrap.className = 'option';
-    wrap.setAttribute('role', 'radio');
-    wrap.setAttribute('tabindex', '0');
-    wrap.setAttribute('aria-checked','false');
-
-    const content = document.createElement('div');
-    content.className = 'option-content';
-
-    if (opt.image){
-      const img = document.createElement('img');
-      img.src = opt.image;
-      img.className = 'option-image';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.alt = 'صورة الخيار';
-      content.appendChild(img);
-    }
-    if (opt.text){
-      const span = document.createElement('span');
-      span.className = 'option-text';
-      span.innerHTML = formatQuizContent(opt.text);
-      content.appendChild(span);
-    }
-    wrap.appendChild(content);
-
-    if (studentState.answeredQuestions[studentState.currentQuestion] !== null){
-      wrap.setAttribute('aria-disabled','true');
-      if (origIdx === q.correct) wrap.classList.add('correct');
-      if (studentState.answeredQuestions[studentState.currentQuestion] === false &&
-          studentState.lastWrong[studentState.currentQuestion] === origIdx){
-        wrap.classList.add('wrong');
-      }
-      const selectedIdx =
-        studentState.answeredQuestions[studentState.currentQuestion] === true
-          ? q.correct
-          : studentState.lastWrong[studentState.currentQuestion];
-      wrap.setAttribute('aria-checked', String(origIdx === selectedIdx));
-    }
-
-    wrap.onclick = ()=> checkAnswer(origIdx);
-    wrap.onkeydown = (e)=>{
-      if (e.key==='Enter' || e.key===' ') { e.preventDefault(); checkAnswer(origIdx); return; }
-      if (e.key==='ArrowRight' || e.key==='ArrowDown' || e.key==='ArrowLeft' || e.key==='ArrowUp'){
-        const items = Array.from(document.querySelectorAll('#options .option'));
-        const idx = items.indexOf(wrap);
-        let next = idx;
-        if (e.key==='ArrowRight' || e.key==='ArrowDown') next++; else next--;
-        if (next < 0) next = items.length - 1;
-        if (next >= items.length) next = 0;
-        const el = items[next]; if (el) el.focus();
-      }
-    };
-    valid.push(wrap);
-  });
-
-  optionsElement.classList.remove('options-row','options-two','options-three');
-  if (valid.length <= 3){
-    optionsElement.classList.add('options-row');
-    if (valid.length === 2) optionsElement.classList.add('options-two');
-    else if (valid.length === 3) optionsElement.classList.add('options-three');
-  }
-  valid.forEach(v => optionsElement.appendChild(v));
-
-  // أزرار/شريط التقدّم
-  const prevBtn = document.getElementById('prevBtn'); if (prevBtn) prevBtn.disabled = (studentState.currentQuestion === 0);
-  const nextBtn = document.getElementById('nextBtn'); if (nextBtn) nextBtn.disabled = false;
-
-  const progressEl = document.getElementById('progress');
-  if (progressEl){
-    const total = Array.isArray(studentState.questions) ? studentState.questions.length : 0;
-    const pct   = total > 0 ? (studentState.currentQuestion / total) * 100 : 0;
-    progressEl.style.width = pct + '%';
-  }
-
-  updateQuestionCounter();
-  updateScoreCounter();
-  updateTimerDisplay();
-  startTimer();
-}
-
-                            function checkAnswer(selectedIndex){
-                      if(studentState.answeredQuestions[studentState.currentQuestion]!==null) return;
-                      const q=studentState.questions[studentState.currentQuestion];
-                      document.querySelectorAll('.option').forEach(o=>o.setAttribute('aria-disabled','true'));
-                      const correct=q.correct;
-                      if(selectedIndex===correct){ studentState.score++; studentState.answeredQuestions[studentState.currentQuestion]=true; }
-                      else { studentState.answeredQuestions[studentState.currentQuestion]=false; studentState.lastWrong[studentState.currentQuestion]=selectedIndex; }
-                      const map=studentState.shuffledMaps[studentState.currentQuestion]||[];
-                      document.querySelectorAll('.option').forEach((el,i)=>{ const orig=map[i]; if(orig===correct) el.classList.add('correct'); if(studentState.answeredQuestions[studentState.currentQuestion]===false && orig===studentState.lastWrong[studentState.currentQuestion]) el.classList.add('wrong'); el.setAttribute('aria-checked', String(orig===selectedIndex)); });
-                      updateScoreCounter();
-                      if(studentState.currentQuestion < studentState.questions.length-1) setTimeout(nextQuestion, 1000); else setTimeout(showResult, 1000);
-                    }
-
-                    function nextQuestion(){ if(studentState.currentQuestion>=studentState.questions.length-1){ showResult(); return; } studentState.currentQuestion++; showQuestion(); }
-                    function previousQuestion(){ if(studentState.currentQuestion>0){ studentState.currentQuestion--; showQuestion(); } }
-
-                    function showResult(){
-                      clearInterval(studentState.timerId);
-                      const qb=document.querySelector('.quiz-box'); if (qb) qb.style.display='none';
-                      const sb=document.getElementById('scoreBoard'); if (sb) sb.style.display='block';
-                      const rt=document.getElementById('readingText'); if (rt) rt.style.display='none';
-                      const ct=document.getElementById('countersBox'); if (ct) ct.style.display='none';
-                      const fs=document.getElementById('finalScore'); if (fs) fs.textContent = formatNumber(studentState.score);
-                      const tq=document.getElementById('totalQuestions'); if (tq) tq.textContent = formatNumber(studentState.questions.length);
-                      applyNumeralTypeToPage();
-                    }
-
-                    function restartQuiz(){
-                      studentState.currentQuestion=0; studentState.score=0; studentState.timeLeft=studentState.questionTime;
-                      studentState.answeredQuestions=new Array(studentState.questions.length).fill(null);
-                      studentState.lastWrong=new Array(studentState.questions.length).fill(null);
-                      const qb=document.querySelector('.quiz-box'); if (qb) qb.style.display='block';
-                      const sb=document.getElementById('scoreBoard'); if (sb) sb.style.display='none';
-                      const ct=document.getElementById('countersBox'); if (ct) ct.style.display='flex';
-                      const p=document.getElementById('progress'); if(p) p.style.width='0%';
-                      document.querySelectorAll('.option').forEach(o=>{ o.classList.remove('correct','wrong'); o.removeAttribute('aria-disabled'); });
-                      showQuestion(); applyNumeralTypeToPage();
-                    }
-
-                    function togglePause(){ studentState.isPaused=!studentState.isPaused; const b=document.getElementById('pauseBtn'); if (b){ b.textContent = studentState.isPaused ? 'استئناف' : 'إيقاف مؤقت'; b.style.background = studentState.isPaused ? '#28a745' : '#ffc107'; } }
-
-                    window.addEventListener('load', ()=>{
-                      const prevBtn=document.getElementById('prevBtn'); if(prevBtn) prevBtn.onclick = previousQuestion;
-                      const nextBtn=document.getElementById('nextBtn'); if(nextBtn) nextBtn.onclick = nextQuestion;
-                      const pauseBtn=document.getElementById('pauseBtn'); if(pauseBtn) pauseBtn.onclick = togglePause;
-                      const restart=document.querySelector('.restart-btn'); if(restart) restart.onclick = restartQuiz;
-
-                      // اختصارات اختيار الخيارات بالأرقام 1..9
-                      document.addEventListener('keydown', (e)=>{
-                        const tag = (e.target && e.target.tagName) || '';
-                        if (tag==='INPUT' || tag==='TEXTAREA') return;
-                        if (!/^\d$/.test(e.key)) return;
-                        const idx = Number(e.key) - 1;
-                        const map = studentState.shuffledMaps[studentState.currentQuestion] || [];
-                        if (idx>=0 && idx<map.length && studentState.answeredQuestions[studentState.currentQuestion]===null){
-                          e.preventDefault();
-                          const origIdx = map[idx];
-                          if (origIdx !== undefined) checkAnswer(origIdx);
-                        }
-                      });
-
-                      studentState.answeredQuestions=new Array(studentState.questions.length).fill(null);
-                      studentState.lastWrong=new Array(studentState.questions.length).fill(null);
-                      showQuestion(); applyNumeralTypeToPage();
-                    });
-                  })();
-                `;
+            studentState.answeredQuestions=new Array(studentState.questions.length).fill(null);
+            studentState.lastWrong=new Array(studentState.questions.length).fill(null);
+            showQuestion();
+          });
+        })();
+      `;
           head.appendChild(studentScript);
 
+          // نظّف السكربتات: أبقِ Purify والطالب فقط (لا MathJax هنا)
           teacherHTML.querySelectorAll('script').forEach(s=>{ const src=s.getAttribute('src')||''; const keep=s.hasAttribute('data-keep')||s.hasAttribute('data-inline-lib'); const isPur=/dompurify|purify/i.test(src); if(!keep && !isPur && (typeof studentScript==='undefined'||s!==studentScript)) s.remove(); });
 
+          // أنشئ الملف
           const out = "<!DOCTYPE html>\n" + teacherHTML.outerHTML;
           const blob = new Blob([out], { type: "text/html" });
           const url = URL.createObjectURL(blob);
@@ -2314,7 +2298,7 @@
       }
 
       function resetProgress() {
-        if (!confirm("هل تريد تصفير التقدّم؟")) return;
+        if (!confirm("Reset progress?")) return;
         localStorage.removeItem(STORAGE_KEY);
         state.currentQuestion = 0;
         state.score = 0;
@@ -2325,6 +2309,11 @@
         showQuestion();
       }
 
+      window.nextQuestion = nextQuestion;
+      window.previousQuestion = previousQuestion;
+      window.togglePause = togglePause;
+      window.restartQuiz = restartQuiz;
+
       window.addEventListener("load", () => {
         const rt = document.getElementById("readingText");
         if (rt) rt.style.display = "none";
@@ -2332,7 +2321,7 @@
         document.getElementById("saveQuestionsButton").onclick =
           saveQuestionsToFile;
         document.getElementById("saveAppButton").onclick = saveAppForOfflineUse;
-        // اختصارات اختيار الخيارات بالأرقام 1..9
+        // Keyboard shortcuts for quick selection: 1..9
         document.addEventListener("keydown", (e) => {
           const tag = (e.target && e.target.tagName) || "";
           if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -2350,12 +2339,14 @@
           }
         });
         document.getElementById("questionCounter").textContent =
-          "السؤال " + formatNumber(0) + " من " + formatNumber(0);
+          "Question " + formatNumber(0) + " of " + formatNumber(0);
         document.getElementById("timer").textContent =
-          "الوقت المتبقي: " + formatNumber(state.timeLeft) + " ثانية";
+          "Time left: " + formatNumber(state.timeLeft) + " seconds";
         document.getElementById("scoreCounter").textContent =
-          "الدرجات: " + formatNumber(0) + " من " + formatNumber(0);
+          "Score: " + formatNumber(0) + " of " + formatNumber(0);
         init();
+        const layoutSel = document.getElementById("optionsLayout");
+        if (layoutSel) layoutSel.value = state.optionsLayout;
       });
 
       document.addEventListener("paste", (e) => {
